@@ -39,53 +39,49 @@ import {
   ArrowLeft,
   RefreshCw,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 import { PlantViewResponse, PlantDataSnapshot, ChartDataPoint } from "../../shared/types";
 import { plantApi } from "../../shared/api";
+import { 
+  Popover, 
+  PopoverContent, 
+  PopoverTrigger 
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { EnergyChart } from "@/components/EnergyChart";
-import { convertToChartData } from "@/lib/plant-utils";
+import { TimeOffsetDisplay } from "@/components/TimeOffsetDisplay";
 
 export default function PlantDetails() {
   const { id } = useParams<{ id: string }>();
   const [energyLiveTab, setEnergyLiveTab] = useState<"graph" | "data">("graph");
   const [batteryPowerTab, setBatteryPowerTab] = useState<"graph" | "data">("graph");
   const [batterySavingsTab, setBatterySavingsTab] = useState<"graph" | "data">("graph");
+  
   const [plantData, setPlantData] = useState<PlantViewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDateRange, setSelectedDateRange] = useState<'24h' | '7d' | '30d'>('24h');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
-  // Helper to get timestamps for date range
-  const getDateTimestamps = (range: '24h' | '7d' | '30d') => {
-    const now = new Date();
-    const end = Math.floor(now.getTime() / 1000);
-    let start: number;
-    
-    switch (range) {
-      case '24h':
-        start = end - (24 * 60 * 60);
-        break;
-      case '7d':
-        start = end - (7 * 24 * 60 * 60);
-        break;
-      case '30d':
-        start = end - (30 * 24 * 60 * 60);
-        break;
-      default:
-        start = end - (24 * 60 * 60);
-    }
-    
-    return { start, end };
-  };
-
-  const fetchPlantData = async (range: '24h' | '7d' | '30d' = '24h') => {
+  const fetchPlantData = async (date: Date = new Date()) => {
     if (!id) return;
     
     try {
       setLoading(true);
       setError(null);
-      const { start, end } = getDateTimestamps(range);
+      
+      // Get full day timestamps (00:00 to 23:59:59)
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const start = Math.floor(startOfDay.getTime() / 1000);
+      const end = Math.floor(endOfDay.getTime() / 1000);
+      
       const response = await plantApi.getPlantView(id, start, end);
       setPlantData(response);
     } catch (err) {
@@ -96,29 +92,49 @@ export default function PlantDetails() {
   };
 
   useEffect(() => {
-    fetchPlantData(selectedDateRange);
-  }, [id, selectedDateRange]);
+    fetchPlantData(selectedDate);
+  }, [id, selectedDate]);
+
+  const goToPreviousDay = () => {
+    const previousDay = new Date(selectedDate);
+    previousDay.setDate(previousDay.getDate() - 1);
+    setSelectedDate(previousDay);
+  };
+
+  const goToNextDay = () => {
+    const nextDay = new Date(selectedDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    setSelectedDate(nextDay);
+  };
+
+  const goToToday = () => {
+    setSelectedDate(new Date());
+  };
+
+  const formatDisplayDate = (date: Date) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+      return "Today";
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return "Yesterday";
+    } else {
+      return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    }
+  };
 
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
-
-  // Process chart data from API response
-  const processChartData = (snapshots: PlantDataSnapshot[]): ChartDataPoint[] => {
-    return snapshots.map(snapshot => ({
-      time: new Date(snapshot.dt * 1000).toLocaleTimeString(),
-      timestamp: snapshot.dt,
-      pv: snapshot.pv_p || 0,
-      battery: snapshot.battery_p || 0,
-      grid: snapshot.grid_p || 0,
-      load: snapshot.load_p || 0,
-      battery_soc: snapshot.battery_soc || 0,
-      price: snapshot.price || 0,
-      battery_savings: snapshot.battery_savings || 0,
-    }));
   };
 
   const formatDate = (timestamp: number) => {
@@ -129,6 +145,23 @@ export default function PlantDetails() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const processChartData = (snapshots: PlantDataSnapshot[]): ChartDataPoint[] => {
+    // Sort snapshots by timestamp to ensure correct order
+    const sortedSnapshots = [...snapshots].sort((a, b) => a.dt - b.dt);
+    
+    return sortedSnapshots.map((snapshot) => ({
+      time: formatTimestamp(snapshot.dt),
+      timestamp: snapshot.dt,
+      pv: snapshot.pv_p / 1000, // Convert to kW
+      battery: snapshot.battery_p / 1000, // Convert to kW
+      grid: snapshot.grid_p / 1000, // Convert to kW
+      load: snapshot.load_p / 1000, // Convert to kW
+      battery_soc: snapshot.battery_soc,
+      price: snapshot.price,
+      battery_savings: snapshot.battery_savings,
+    }));
   };
 
   const getStatusColor = (status: string) => {
@@ -220,7 +253,7 @@ export default function PlantDetails() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                onClick={() => fetchPlantData(selectedDateRange)}
+                onClick={() => fetchPlantData(selectedDate)}
                 disabled={loading}
                 variant="outline"
                 size="sm"
@@ -240,27 +273,86 @@ export default function PlantDetails() {
           </div>
         </div>
 
-        {/* Date Selector Section */}
+        {/* Date Navigation Section */}
         <div className="p-4 mb-6 bg-white rounded-lg border border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Select
-                value={selectedDateRange}
-                onValueChange={(value) => setSelectedDateRange(value as '24h' | '7d' | '30d')}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Select date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="24h">Last 24 hours</SelectItem>
-                  <SelectItem value="7d">Last 7 days</SelectItem>
-                  <SelectItem value="30d">Last 30 days</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousDay}
+                  className="p-2"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-64 justify-start text-left font-normal"
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {formatDisplayDate(selectedDate)}
+                      <ChevronDown className="ml-auto h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => {
+                        if (date) {
+                          setSelectedDate(date);
+                        }
+                      }}
+                      disabled={(date) => date > new Date()}
+                      initialFocus
+                    />
+                    <div className="p-3 border-t">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={goToToday}
+                      >
+                        Today
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToNextDay}
+                  disabled={selectedDate.toDateString() === new Date().toDateString()}
+                  className="p-2"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span>•</span>
+                <span>
+                  {selectedDate.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </span>
+                <span>•</span>
+                <span>Full Day (00:00 - 24:00)</span>
+              </div>
+              
               <Badge className={getStatusColor(plantData.plant_metadata.status)}>
                 {plantData.plant_metadata.status}
               </Badge>
             </div>
+            
+            <TimeOffsetDisplay />
+            
             <div className="flex gap-2">
               <Button variant="outline" size="sm">
                 Edit
@@ -414,6 +506,7 @@ export default function PlantDetails() {
                     data={chartData}
                     type="energy"
                     height={368}
+                    selectedDate={selectedDate}
                   />
                 ) : (
                   <div className="h-full overflow-auto bg-white border rounded-lg">
@@ -474,57 +567,16 @@ export default function PlantDetails() {
           {/* Battery Power Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Battery className="w-5 h-5" />
-                Battery Power & SOC
-              </CardTitle>
+              <CardTitle className="text-lg">Battery Power</CardTitle>
             </CardHeader>
-            <div className="border-b">
-              <button
-                className={`px-4 py-2 border-b-2 text-sm font-medium ${
-                  batteryPowerTab === "graph"
-                    ? "text-brand-teal-600 border-brand-teal-600"
-                    : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-                onClick={() => setBatteryPowerTab("graph")}
-              >
-                Graph
-              </button>
-              <button
-                className={`px-4 py-2 border-b-2 text-sm font-medium ${
-                  batteryPowerTab === "data"
-                    ? "text-brand-teal-600 border-brand-teal-600"
-                    : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-                onClick={() => setBatteryPowerTab("data")}
-              >
-                Data
-              </button>
-            </div>
-
             <CardContent>
               <div className="h-[23rem]">
-                {batteryPowerTab === "graph" ? (
-                  <EnergyChart
-                    data={chartData}
-                    type="battery"
-                    height={368}
-                  />
-                ) : (
-                  <div className="h-full overflow-y-auto">
-                    <div className="space-y-2">
-                      {chartData.slice(0, 10).map((point, index) => (
-                        <div key={index} className="flex justify-between items-center p-2 border rounded">
-                          <span className="text-sm text-gray-600">{point.time}</span>
-                          <div className="flex gap-4 text-sm">
-                            <span className="text-blue-600">Battery: {point.battery.toFixed(1)}kW</span>
-                            <span className="text-purple-600">SOC: {point.battery_soc.toFixed(1)}%</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <EnergyChart
+                  data={chartData}
+                  type="battery"
+                  height={368}
+                  selectedDate={selectedDate}
+                />
               </div>
             </CardContent>
           </Card>
@@ -532,57 +584,16 @@ export default function PlantDetails() {
           {/* Battery Savings Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <DollarSign className="w-5 h-5" />
-                Battery Savings & Energy Price
-              </CardTitle>
+              <CardTitle className="text-lg">Battery Savings</CardTitle>
             </CardHeader>
-            <div className="border-b">
-              <button
-                className={`px-4 py-2 border-b-2 text-sm font-medium ${
-                  batterySavingsTab === "graph"
-                    ? "text-brand-teal-600 border-brand-teal-600"
-                    : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-                onClick={() => setBatterySavingsTab("graph")}
-              >
-                Graph
-              </button>
-              <button
-                className={`px-4 py-2 border-b-2 text-sm font-medium ${
-                  batterySavingsTab === "data"
-                    ? "text-brand-teal-600 border-brand-teal-600"
-                    : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-                onClick={() => setBatterySavingsTab("data")}
-              >
-                Data
-              </button>
-            </div>
-
             <CardContent>
               <div className="h-[23rem]">
-                {batterySavingsTab === "graph" ? (
-                  <EnergyChart
-                    data={chartData}
-                    type="savings"
-                    height={368}
-                  />
-                ) : (
-                  <div className="h-full overflow-y-auto">
-                    <div className="space-y-2">
-                      {chartData.slice(0, 10).map((point, index) => (
-                        <div key={index} className="flex justify-between items-center p-2 border rounded">
-                          <span className="text-sm text-gray-600">{point.time}</span>
-                          <div className="flex gap-4 text-sm">
-                            <span className="text-green-600">Savings: ${point.battery_savings.toFixed(2)}</span>
-                            <span className="text-orange-600">Price: ${point.price.toFixed(3)}/kWh</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <EnergyChart
+                  data={chartData}
+                  type="savings"
+                  height={368}
+                  selectedDate={selectedDate}
+                />
               </div>
             </CardContent>
           </Card>

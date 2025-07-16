@@ -1,7 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
-import { ChevronDown, Menu } from "lucide-react";
+import { ChevronDown, Menu, Settings, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface HeaderProps {
   variant?: "marketing" | "app";
@@ -127,13 +133,29 @@ export function Header({ variant = "marketing" }: HeaderProps) {
 
           {/* Admin Dropdown */}
           <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              className="text-gray-600 hover:text-gray-900"
-            >
-              Admin
-              <ChevronDown className="w-4 h-4 ml-1" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="text-gray-600 hover:text-gray-900"
+                >
+                  Admin
+                  <ChevronDown className="w-4 h-4 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link to="/settings" className="flex items-center">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex items-center">
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

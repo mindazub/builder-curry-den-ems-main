@@ -39,10 +39,19 @@ import {
   ArrowLeft,
   RefreshCw,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 import { PlantViewResponse, PlantDataSnapshot, ChartDataPoint } from "../../shared/types";
 import { plantApi } from "../../shared/api";
+import { 
+  Popover, 
+  PopoverContent, 
+  PopoverTrigger 
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { EnergyChart } from "@/components/EnergyChart";
 
 export default function PlantDetails() {
   const { id } = useParams<{ id: string }>();
@@ -61,7 +70,17 @@ export default function PlantDetails() {
     try {
       setLoading(true);
       setError(null);
-      const { start, end } = plantApi.getDateTimestamps(date);
+      
+      // Get full day timestamps (00:00 to 23:59:59)
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const start = Math.floor(startOfDay.getTime() / 1000);
+      const end = Math.floor(endOfDay.getTime() / 1000);
+      
       const response = await plantApi.getPlantView(id, start, end);
       setPlantData(response);
     } catch (err) {
@@ -74,6 +93,41 @@ export default function PlantDetails() {
   useEffect(() => {
     fetchPlantData(selectedDate);
   }, [id, selectedDate]);
+
+  const goToPreviousDay = () => {
+    const previousDay = new Date(selectedDate);
+    previousDay.setDate(previousDay.getDate() - 1);
+    setSelectedDate(previousDay);
+  };
+
+  const goToNextDay = () => {
+    const nextDay = new Date(selectedDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    setSelectedDate(nextDay);
+  };
+
+  const goToToday = () => {
+    setSelectedDate(new Date());
+  };
+
+  const formatDisplayDate = (date: Date) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+      return "Today";
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return "Yesterday";
+    } else {
+      return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    }
+  };
 
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleTimeString("en-US", {
@@ -93,7 +147,10 @@ export default function PlantDetails() {
   };
 
   const processChartData = (snapshots: PlantDataSnapshot[]): ChartDataPoint[] => {
-    return snapshots.map((snapshot) => ({
+    // Sort snapshots by timestamp to ensure correct order
+    const sortedSnapshots = [...snapshots].sort((a, b) => a.dt - b.dt);
+    
+    return sortedSnapshots.map((snapshot) => ({
       time: formatTimestamp(snapshot.dt),
       timestamp: snapshot.dt,
       pv: snapshot.pv_p / 1000, // Convert to kW
@@ -215,34 +272,79 @@ export default function PlantDetails() {
           </div>
         </div>
 
-        {/* Date Selector Section */}
+        {/* Date Navigation Section */}
         <div className="p-4 mb-6 bg-white rounded-lg border border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Select
-                value={selectedDate.toISOString().split("T")[0]}
-                onValueChange={(value) => setSelectedDate(new Date(value))}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Select date" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 7 }, (_, i) => {
-                    const date = new Date();
-                    date.setDate(date.getDate() - i);
-                    return (
-                      <SelectItem key={i} value={date.toISOString().split("T")[0]}>
-                        {date.toLocaleDateString("en-US", {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </SelectItem>
-                    );
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousDay}
+                  className="p-2"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-64 justify-start text-left font-normal"
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {formatDisplayDate(selectedDate)}
+                      <ChevronDown className="ml-auto h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => {
+                        if (date) {
+                          setSelectedDate(date);
+                        }
+                      }}
+                      disabled={(date) => date > new Date()}
+                      initialFocus
+                    />
+                    <div className="p-3 border-t">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={goToToday}
+                      >
+                        Today
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToNextDay}
+                  disabled={selectedDate.toDateString() === new Date().toDateString()}
+                  className="p-2"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span>•</span>
+                <span>
+                  {selectedDate.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
                   })}
-                </SelectContent>
-              </Select>
+                </span>
+                <span>•</span>
+                <span>Full Day (00:00 - 24:00)</span>
+              </div>
+              
               <Badge className={getStatusColor(plantData.plant_metadata.status)}>
                 {plantData.plant_metadata.status}
               </Badge>
@@ -396,24 +498,11 @@ export default function PlantDetails() {
             <CardContent>
               <div className="h-[23rem]">
                 {energyLiveTab === "graph" ? (
-                  <div className="h-full bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-4 relative overflow-hidden">
-                    {/* Chart placeholder - would be replaced with actual chart */}
-                    <div className="absolute inset-0 p-4">
-                      <div className="flex justify-between text-xs text-gray-600 mb-2">
-                        <span>Max: {Math.max(...chartData.map(d => d.pv)).toFixed(1)} kW</span>
-                        <span>Min: {Math.min(...chartData.map(d => d.battery)).toFixed(1)} kW</span>
-                      </div>
-                      <div className="h-full flex items-center justify-center">
-                        <div className="text-center text-gray-600">
-                          <LineChart className="w-12 h-12 mx-auto mb-4" />
-                          <p className="text-sm">Chart will be rendered here</p>
-                          <p className="text-xs text-gray-500 mt-2">
-                            {chartData.length} data points from {chartData[0]?.time} to {chartData[chartData.length - 1]?.time}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <EnergyChart
+                    data={chartData}
+                    type="energy"
+                    height={368}
+                  />
                 ) : (
                   <div className="h-full overflow-auto bg-white border rounded-lg">
                     <table className="w-full text-sm">
