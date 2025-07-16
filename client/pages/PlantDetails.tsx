@@ -1,5 +1,5 @@
 import { useParams, Link } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,20 +59,21 @@ import PlantMapSimple from "@/components/PlantMapSimple";
 import StaticMap from "@/components/StaticMapEmbed";
 import MapErrorBoundary from "@/components/MapErrorBoundary";
 import jsPDF from 'jspdf';
+import PlantStaticInfo from "@/components/PlantStaticInfo";
+import PlantCharts from "@/components/PlantCharts";
+import DateNavigation from "@/components/DateNavigation";
+import PlantDevices from "@/components/PlantDevices";
 
 export default function PlantDetails() {
   const { id } = useParams<{ id: string }>();
-  const [energyLiveTab, setEnergyLiveTab] = useState<"graph" | "data">("graph");
-  const [batteryPowerTab, setBatteryPowerTab] = useState<"graph" | "data">("graph");
-  const [batterySavingsTab, setBatterySavingsTab] = useState<"graph" | "data">("graph");
-  
   const [plantData, setPlantData] = useState<PlantViewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [mapType, setMapType] = useState<'static' | 'simple' | 'leaflet'>('static');
+  const [energyLiveTab, setEnergyLiveTab] = useState<'graph' | 'data'>('graph');
 
-  const fetchPlantData = async (date: Date = new Date()) => {
+  const fetchPlantData = useCallback(async (date: Date = new Date()) => {
     if (!id) return;
     
     try {
@@ -96,42 +97,53 @@ export default function PlantDetails() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchPlantData(selectedDate);
-  }, [id, selectedDate]);
+  }, [fetchPlantData, selectedDate]);
 
-  const goToPreviousDay = () => {
+  const goToPreviousDay = useCallback(() => {
     const previousDay = new Date(selectedDate);
     previousDay.setDate(previousDay.getDate() - 1);
     setSelectedDate(previousDay);
-  };
+  }, [selectedDate]);
 
-  const goToNextDay = () => {
+  const goToNextDay = useCallback(() => {
     const nextDay = new Date(selectedDate);
     nextDay.setDate(nextDay.getDate() + 1);
     setSelectedDate(nextDay);
-  };
+  }, [selectedDate]);
 
-  const formatTimestamp = (timestamp: number) => {
+  const handleMapTypeChange = useCallback((value: 'static' | 'simple' | 'leaflet') => {
+    setMapType(value);
+  }, []);
+
+  const formatDate = useCallback((dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  }, []);
+
+  const getStatusColor = useCallback((status: string) => {
+    switch (status.toLowerCase()) {
+      case "working":
+        return "bg-green-100 text-green-800";
+      case "error":
+        return "bg-red-100 text-red-800";
+      case "maintenance":
+        return "bg-yellow-100 text-yellow-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  }, []);
+
+  const formatTimestamp = useCallback((timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
+  }, []);
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const processChartData = (snapshots: PlantDataSnapshot[]): ChartDataPoint[] => {
+  const processChartData = useCallback((snapshots: PlantDataSnapshot[]): ChartDataPoint[] => {
     // Sort snapshots by timestamp to ensure correct order
     const sortedSnapshots = [...snapshots].sort((a, b) => a.dt - b.dt);
     
@@ -146,10 +158,27 @@ export default function PlantDetails() {
       price: snapshot.price,
       battery_savings: snapshot.battery_savings,
     }));
-  };
+  }, [formatTimestamp]);
 
-  // Download functions
-  const downloadChartPNG = (type: 'energy' | 'battery' | 'savings') => {
+  const chartData = useMemo(() => {
+    if (!plantData) return [];
+    return processChartData(plantData.aggregated_data_snapshots);
+  }, [plantData, processChartData]);
+
+  const tableData = useMemo(() => {
+    return chartData.map((row, index) => ({
+      index,
+      time: row.time,
+      pv: row.pv.toFixed(2),
+      battery: row.battery.toFixed(2),
+      grid: row.grid.toFixed(2),
+      load: row.load.toFixed(2),
+      battery_soc: row.battery_soc.toFixed(1)
+    }));
+  }, [chartData]);
+
+  // Download functions with useCallback for performance
+  const downloadChartPNG = useCallback((type: 'energy' | 'battery' | 'savings') => {
     const chartElement = document.querySelector(`[data-chart-type="${type}"] canvas`) as HTMLCanvasElement;
     if (chartElement) {
       // Create a new canvas with white background
@@ -173,9 +202,9 @@ export default function PlantDetails() {
       link.href = url;
       link.click();
     }
-  };
+  }, [selectedDate]);
 
-  const downloadChartCSV = (type: 'energy' | 'battery' | 'savings') => {
+  const downloadChartCSV = useCallback((type: 'energy' | 'battery' | 'savings') => {
     const csvContent = [
       ['Timestamp', 'Value', 'Type'],
       ...chartData.flatMap(d => [
@@ -196,9 +225,9 @@ export default function PlantDetails() {
     link.href = url;
     link.click();
     URL.revokeObjectURL(url);
-  };
+  }, [chartData, selectedDate]);
 
-  const downloadChartPDF = (type: 'energy' | 'battery' | 'savings') => {
+  const downloadChartPDF = useCallback((type: 'energy' | 'battery' | 'savings') => {
     const chartElement = document.querySelector(`[data-chart-type="${type}"] canvas`) as HTMLCanvasElement;
     if (chartElement && plantData) {
       const pdf = new jsPDF({
@@ -336,20 +365,7 @@ export default function PlantDetails() {
       
       pdf.save(`${type}-chart-report-${selectedDate.toISOString().split('T')[0]}.pdf`);
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Working":
-        return "bg-green-100 text-green-800";
-      case "Error":
-        return "bg-red-100 text-red-800";
-      case "Maintenance":
-        return "bg-yellow-100 text-yellow-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  }, [selectedDate, plantData, chartData, formatTimestamp]);
 
   if (loading) {
     return (
@@ -399,7 +415,7 @@ export default function PlantDetails() {
     );
   }
 
-  const chartData = processChartData(plantData.aggregated_data_snapshots);
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -447,462 +463,37 @@ export default function PlantDetails() {
           </div>
         </div>
 
-        {/* Date Navigation Section */}
-        <div className="p-4 mb-6 bg-white rounded-lg border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center justify-center flex-1">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToPreviousDay}
-                  className="p-2"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-64 justify-start text-left font-normal"
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {selectedDate.toLocaleDateString("en-US", {
-                        weekday: "long",
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                      <ChevronDown className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={(date) => {
-                        if (date) {
-                          setSelectedDate(date);
-                        }
-                      }}
-                      disabled={(date) => date > new Date()}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToNextDay}
-                  disabled={selectedDate.toDateString() === new Date().toDateString()}
-                  className="p-2"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="flex gap-2 items-center">
-              <Link to="/plants">
-                <Button variant="outline" size="sm">
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-              </Link>
-              <Link to="/plants">
-                <Button variant="outline" size="sm">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Plant
-                </Button>
-              </Link>
-              <Badge className={getStatusColor(plantData.plant_metadata.status)}>
-                {plantData.plant_metadata.status}
-              </Badge>
-            </div>
-          </div>
-        </div>
+        {/* Date Navigation Component */}
+        <DateNavigation 
+          selectedDate={selectedDate}
+          onDateChange={(date) => setSelectedDate(date)}
+          onPreviousDay={goToPreviousDay}
+          onNextDay={goToNextDay}
+          plantStatus={plantData.plant_metadata.status}
+          getStatusColor={getStatusColor}
+        />
 
-        {/* Top Section - General Info and Map Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 lg:h-96">
-          {/* General Information */}
-          <Card className="flex-1 flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-lg">General Information</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Plant ID</span>
-                  <div className="font-medium text-gray-900">
-                    {plantData.plant_metadata.uid.substring(0, 8)}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-600">Owner</span>
-                  <div className="font-medium text-gray-900">
-                    {plantData.plant_metadata.owner.substring(0, 8)}...
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-600">Capacity</span>
-                  <div className="font-medium text-gray-900">
-                    {(plantData.plant_metadata.capacity / 1000).toFixed(1)} kW
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-600">Latitude</span>
-                  <div className="font-medium text-gray-900">
-                    {plantData.plant_metadata.latitude.toFixed(5)}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-600">Longitude</span>
-                  <div className="font-medium text-gray-900">
-                    {plantData.plant_metadata.longitude.toFixed(5)}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-600">Status</span>
-                  <Badge className={getStatusColor(plantData.plant_metadata.status)}>
-                    {plantData.plant_metadata.status}
-                  </Badge>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-gray-600">Updated at</span>
-                  <div className="font-medium text-gray-900">
-                    {formatDate(plantData.plant_metadata.updated_at)}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Plant Static Information Component */}
+        <PlantStaticInfo 
+          plantData={plantData}
+          mapType={mapType}
+          onMapTypeChange={setMapType}
+        />
 
-          {/* Map Location */}
-          <Card className="flex-1 flex flex-col">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Map Location</CardTitle>
-                <Select value={mapType} onValueChange={(value: 'static' | 'simple' | 'leaflet') => setMapType(value)}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="static">Static Map</SelectItem>
-                    <SelectItem value="simple">Simple View</SelectItem>
-                    <SelectItem value="leaflet">Interactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="h-full">
-              <MapErrorBoundary fallback={<StaticMap
-                latitude={plantData.plant_metadata.latitude}
-                longitude={plantData.plant_metadata.longitude}
-                plantId={plantData.plant_metadata.uid}
-                capacity={plantData.plant_metadata.capacity}
-                status={plantData.plant_metadata.status}
-              />}>
-                {mapType === 'static' && (
-                  <StaticMap
-                    latitude={plantData.plant_metadata.latitude}
-                    longitude={plantData.plant_metadata.longitude}
-                    plantId={plantData.plant_metadata.uid}
-                    capacity={plantData.plant_metadata.capacity}
-                    status={plantData.plant_metadata.status}
-                  />
-                )}
-                {mapType === 'simple' && (
-                  <PlantMapSimple
-                    latitude={plantData.plant_metadata.latitude}
-                    longitude={plantData.plant_metadata.longitude}
-                    plantId={plantData.plant_metadata.uid}
-                    capacity={plantData.plant_metadata.capacity}
-                    status={plantData.plant_metadata.status}
-                  />
-                )}
-                {mapType === 'leaflet' && (
-                  <PlantMap
-                    latitude={plantData.plant_metadata.latitude}
-                    longitude={plantData.plant_metadata.longitude}
-                    plantId={plantData.plant_metadata.uid}
-                    capacity={plantData.plant_metadata.capacity}
-                    status={plantData.plant_metadata.status}
-                  />
-                )}
-              </MapErrorBoundary>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Plant Charts Component */}
+        <PlantCharts 
+          chartData={chartData}
+          selectedDate={selectedDate}
+          onDownloadPNG={downloadChartPNG}
+          onDownloadCSV={downloadChartCSV}
+          onDownloadPDF={downloadChartPDF}
+        />
 
-        {/* Charts Section - Full Width */}
-        <div className="space-y-6">
-          {/* Energy Live Chart */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Energy Live Chart</CardTitle>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">
-                  {chartData.length} data points
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="p-1 h-8 w-8">
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => downloadChartPNG('energy')}>
-                      Download as PNG
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => downloadChartCSV('energy')}>
-                      Download as CSV
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => downloadChartPDF('energy')}>
-                      Download as PDF
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-
-            {/* Tab Navigation */}
-            <div className="flex border-b border-gray-200 px-6">
-              <button
-                className={`px-4 py-2 text-sm font-medium border-b-2 ${
-                  energyLiveTab === "graph"
-                    ? "text-brand-teal-600 border-brand-teal-600"
-                    : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-                onClick={() => setEnergyLiveTab("graph")}
-              >
-                Graph
-              </button>
-              <button
-                className={`px-4 py-2 text-sm font-medium border-b-2 ${
-                  energyLiveTab === "data"
-                    ? "text-brand-teal-600 border-brand-teal-600"
-                    : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-                onClick={() => setEnergyLiveTab("data")}
-              >
-                Data
-              </button>
-            </div>
-
-            <CardContent>
-              <div className="h-[23rem]">
-                {energyLiveTab === "graph" ? (
-                  <div data-chart-type="energy">
-                    <EnergyChart
-                      data={chartData}
-                      type="energy"
-                      height={368}
-                      selectedDate={selectedDate}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-full overflow-auto bg-white border rounded-lg">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">Time</th>
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">PV (kW)</th>
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">Battery (kW)</th>
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">Grid (kW)</th>
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">Load (kW)</th>
-                          <th className="px-4 py-2 text-left font-medium text-gray-600">Battery SOC (%)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {chartData.map((row, index) => (
-                          <tr key={index} className="border-t border-gray-100 hover:bg-gray-50">
-                            <td className="px-4 py-2">{row.time}</td>
-                            <td className="px-4 py-2">{row.pv.toFixed(2)}</td>
-                            <td className="px-4 py-2">{row.battery.toFixed(2)}</td>
-                            <td className="px-4 py-2">{row.grid.toFixed(2)}</td>
-                            <td className="px-4 py-2">{row.load.toFixed(2)}</td>
-                            <td className="px-4 py-2">{row.battery_soc.toFixed(1)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-              {energyLiveTab === "graph" && (
-                <div className="flex items-center gap-4 mt-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-blue-400 rounded"></div>
-                    <span>PV (kW)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-red-400 rounded"></div>
-                    <span>Battery (kW)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-green-400 rounded"></div>
-                    <span>Grid (kW)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-yellow-400 rounded"></div>
-                    <span>Load (kW)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-purple-400 rounded"></div>
-                    <span>Battery SOC (%)</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Battery Power Chart */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Battery Power</CardTitle>
-              <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="p-1 h-8 w-8">
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => downloadChartPNG('battery')}>
-                      Download as PNG
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => downloadChartCSV('battery')}>
-                      Download as CSV
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => downloadChartPDF('battery')}>
-                      Download as PDF
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[23rem]">
-                <div data-chart-type="battery">
-                  <EnergyChart
-                    data={chartData}
-                    type="battery"
-                    height={368}
-                    selectedDate={selectedDate}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Battery Savings Chart */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Battery Savings</CardTitle>
-              <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="p-1 h-8 w-8">
-                      <Download className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => downloadChartPNG('savings')}>
-                      Download as PNG
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => downloadChartCSV('savings')}>
-                      Download as CSV
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => downloadChartPDF('savings')}>
-                      Download as PDF
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[23rem]">
-                <div data-chart-type="savings">
-                  <EnergyChart
-                    data={chartData}
-                    type="savings"
-                    height={368}
-                    selectedDate={selectedDate}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Controllers and Devices Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Controllers & Devices</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {plantData.controllers.map((controller, index) => (
-                  <div key={controller.uid} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-medium text-gray-900">
-                        Controller #{controller.serial_number}
-                      </h4>
-                      <Badge className="bg-blue-100 text-blue-800">
-                        {controller.controller_main_feeds.length} Main Feeds
-                      </Badge>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      {controller.controller_main_feeds.map((mainFeed, feedIndex) => (
-                        <div key={mainFeed.uid} className="bg-gray-50 rounded-lg p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium text-gray-700">
-                              Main Feed {feedIndex + 1}
-                            </span>
-                            <div className="flex gap-2 text-xs">
-                              <span className="text-green-600">Export: {mainFeed.export_power/1000}kW</span>
-                              <span className="text-red-600">Import: {mainFeed.import_power/1000}kW</span>
-                            </div>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {mainFeed.main_feed_devices.map((device) => (
-                              <div key={device.uid} className="bg-white rounded border p-2">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-sm font-medium text-gray-800">
-                                    {device.device_type}
-                                  </span>
-                                  <Badge className={`text-xs ${getStatusColor(device.device_status)}`}>
-                                    {device.device_status}
-                                  </Badge>
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  <div>{device.device_manufacturer} {device.device_model}</div>
-                                  {device.parameters.communication && (
-                                    <div className="mt-1">
-                                      {device.parameters.communication.ip}:{device.parameters.communication.port}
-                                    </div>
-                                  )}
-                                  {device.assigned_devices.length > 0 && (
-                                    <div className="mt-1 text-blue-600">
-                                      +{device.assigned_devices.length} sub-devices
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Plant Devices Component */}
+        <PlantDevices 
+          plantData={plantData}
+          getStatusColor={getStatusColor}
+        />
       </div>
 
       {/* Footer */}
