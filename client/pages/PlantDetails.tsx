@@ -52,6 +52,11 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { EnergyChart } from "@/components/EnergyChart";
+import PlantMap from "@/components/PlantMap";
+import PlantMapSimple from "@/components/PlantMapSimple";
+import StaticMap from "@/components/StaticMapEmbed";
+import MapErrorBoundary from "@/components/MapErrorBoundary";
+import jsPDF from 'jspdf';
 import { TimeOffsetDisplay } from "@/components/TimeOffsetDisplay";
 
 export default function PlantDetails() {
@@ -64,6 +69,7 @@ export default function PlantDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [mapType, setMapType] = useState<'static' | 'simple' | 'leaflet'>('static');
 
   const fetchPlantData = async (date: Date = new Date()) => {
     if (!id) return;
@@ -162,6 +168,196 @@ export default function PlantDetails() {
       price: snapshot.price,
       battery_savings: snapshot.battery_savings,
     }));
+  };
+
+  // Download functions
+  const downloadChartPNG = (type: 'energy' | 'battery' | 'savings') => {
+    const chartElement = document.querySelector(`[data-chart-type="${type}"] canvas`) as HTMLCanvasElement;
+    if (chartElement) {
+      // Create a new canvas with white background
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = chartElement.width;
+      canvas.height = chartElement.height;
+      
+      // Fill with white background
+      if (ctx) {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw the chart on top
+        ctx.drawImage(chartElement, 0, 0);
+      }
+      
+      const url = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `${type}-chart-${selectedDate.toISOString().split('T')[0]}.png`;
+      link.href = url;
+      link.click();
+    }
+  };
+
+  const downloadChartCSV = (type: 'energy' | 'battery' | 'savings') => {
+    const csvContent = [
+      ['Timestamp', 'Value', 'Type'],
+      ...chartData.flatMap(d => [
+        [new Date(d.timestamp * 1000).toISOString(), d.pv.toString(), 'Solar (PV)'],
+        [new Date(d.timestamp * 1000).toISOString(), d.grid.toString(), 'Grid'],
+        [new Date(d.timestamp * 1000).toISOString(), d.load.toString(), 'Load'],
+        [new Date(d.timestamp * 1000).toISOString(), d.battery.toString(), 'Battery'],
+        [new Date(d.timestamp * 1000).toISOString(), d.battery_soc.toString(), 'Battery SOC'],
+        [new Date(d.timestamp * 1000).toISOString(), d.price.toString(), 'Price'],
+        [new Date(d.timestamp * 1000).toISOString(), d.battery_savings.toString(), 'Battery Savings'],
+      ])
+    ].map(row => row.join(',')).join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `${type}-chart-data-${selectedDate.toISOString().split('T')[0]}.csv`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadChartPDF = (type: 'energy' | 'battery' | 'savings') => {
+    const chartElement = document.querySelector(`[data-chart-type="${type}"] canvas`) as HTMLCanvasElement;
+    if (chartElement && plantData) {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      let yPosition = 20;
+      
+      // Add title
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${type.charAt(0).toUpperCase() + type.slice(1)} Chart Report`, 20, yPosition);
+      yPosition += 10;
+      
+      // Add date
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Date: ${selectedDate.toLocaleDateString()}`, 20, yPosition);
+      yPosition += 15;
+      
+      // Add plant information
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Plant Information', 20, yPosition);
+      yPosition += 8;
+      
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Plant ID: ${plantData.plant_metadata.uid}`, 20, yPosition);
+      yPosition += 5;
+      pdf.text(`Owner: ${plantData.plant_metadata.owner}`, 20, yPosition);
+      yPosition += 5;
+      pdf.text(`Status: ${plantData.plant_metadata.status}`, 20, yPosition);
+      yPosition += 5;
+      pdf.text(`Capacity: ${plantData.plant_metadata.capacity} kW`, 20, yPosition);
+      yPosition += 5;
+      pdf.text(`Location: ${plantData.plant_metadata.latitude.toFixed(4)}, ${plantData.plant_metadata.longitude.toFixed(4)}`, 20, yPosition);
+      yPosition += 5;
+      pdf.text(`Last Updated: ${new Date(plantData.plant_metadata.updated_at * 1000).toLocaleDateString()}`, 20, yPosition);
+      yPosition += 15;
+      
+      // Add chart with white background
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = chartElement.width;
+      canvas.height = chartElement.height;
+      
+      if (ctx) {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(chartElement, 0, 0);
+      }
+      
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = 170;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      // Check if we need a new page
+      if (yPosition + imgHeight > 280) {
+        pdf.addPage();
+        yPosition = 20;
+      }
+      
+      pdf.addImage(imgData, 'PNG', 20, yPosition, imgWidth, imgHeight);
+      yPosition += imgHeight + 15;
+      
+      // Add data table
+      if (yPosition > 200) {
+        pdf.addPage();
+        yPosition = 20;
+      }
+      
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Data Table', 20, yPosition);
+      yPosition += 10;
+      
+      // Table headers
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      const headers = ['Time', 'PV (kW)', 'Battery (kW)', 'Grid (kW)', 'Load (kW)', 'SOC (%)', 'Price (€/MWh)', 'Savings (€)'];
+      const colWidths = [20, 20, 20, 20, 20, 20, 25, 20];
+      let xPosition = 20;
+      
+      headers.forEach((header, index) => {
+        pdf.text(header, xPosition, yPosition);
+        xPosition += colWidths[index];
+      });
+      yPosition += 5;
+      
+      // Add a line under headers
+      pdf.line(20, yPosition, 185, yPosition);
+      yPosition += 5;
+      
+      // Table data
+      pdf.setFont('helvetica', 'normal');
+      const maxRows = Math.min(chartData.length, 25); // Limit rows to fit on page
+      
+      for (let i = 0; i < maxRows; i++) {
+        const row = chartData[i];
+        xPosition = 20;
+        
+        const rowData = [
+          formatTimestamp(row.timestamp),
+          row.pv.toFixed(2),
+          row.battery.toFixed(2),
+          row.grid.toFixed(2),
+          row.load.toFixed(2),
+          row.battery_soc.toFixed(1),
+          row.price.toFixed(2),
+          row.battery_savings.toFixed(3)
+        ];
+        
+        rowData.forEach((data, index) => {
+          pdf.text(data, xPosition, yPosition);
+          xPosition += colWidths[index];
+        });
+        yPosition += 4;
+        
+        // Check if we need a new page
+        if (yPosition > 270) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+      }
+      
+      // Add footer with additional info
+      if (chartData.length > 25) {
+        yPosition += 10;
+        pdf.setFontSize(8);
+        pdf.text(`Note: Showing first 25 rows of ${chartData.length} total data points`, 20, yPosition);
+      }
+      
+      pdf.save(`${type}-chart-report-${selectedDate.toISOString().split('T')[0]}.pdf`);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -422,20 +618,56 @@ export default function PlantDetails() {
           {/* Map Location */}
           <Card className="flex-1 flex flex-col">
             <CardHeader>
-              <CardTitle className="text-lg">Map Location</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Map Location</CardTitle>
+                <Select value={mapType} onValueChange={(value: 'static' | 'simple' | 'leaflet') => setMapType(value)}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="static">Static Map</SelectItem>
+                    <SelectItem value="simple">Simple View</SelectItem>
+                    <SelectItem value="leaflet">Interactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent className="h-full">
-              <div className="h-full bg-gray-200 rounded-lg flex items-center justify-center">
-                <div className="text-center text-gray-600">
-                  <MapPin className="w-8 h-8 mx-auto mb-2" />
-                  <div className="text-sm">
-                    {plantData.plant_metadata.latitude.toFixed(5)}, {plantData.plant_metadata.longitude.toFixed(5)}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    Interactive map would be displayed here
-                  </div>
-                </div>
-              </div>
+              <MapErrorBoundary fallback={<StaticMap
+                latitude={plantData.plant_metadata.latitude}
+                longitude={plantData.plant_metadata.longitude}
+                plantId={plantData.plant_metadata.uid}
+                capacity={plantData.plant_metadata.capacity}
+                status={plantData.plant_metadata.status}
+              />}>
+                {mapType === 'static' && (
+                  <StaticMap
+                    latitude={plantData.plant_metadata.latitude}
+                    longitude={plantData.plant_metadata.longitude}
+                    plantId={plantData.plant_metadata.uid}
+                    capacity={plantData.plant_metadata.capacity}
+                    status={plantData.plant_metadata.status}
+                  />
+                )}
+                {mapType === 'simple' && (
+                  <PlantMapSimple
+                    latitude={plantData.plant_metadata.latitude}
+                    longitude={plantData.plant_metadata.longitude}
+                    plantId={plantData.plant_metadata.uid}
+                    capacity={plantData.plant_metadata.capacity}
+                    status={plantData.plant_metadata.status}
+                  />
+                )}
+                {mapType === 'leaflet' && (
+                  <PlantMap
+                    latitude={plantData.plant_metadata.latitude}
+                    longitude={plantData.plant_metadata.longitude}
+                    plantId={plantData.plant_metadata.uid}
+                    capacity={plantData.plant_metadata.capacity}
+                    status={plantData.plant_metadata.status}
+                  />
+                )}
+              </MapErrorBoundary>
             </CardContent>
           </Card>
         </div>
@@ -452,23 +684,19 @@ export default function PlantDetails() {
                 </span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="outline" size="sm" className="p-1 h-8 w-8">
                       <Download className="w-4 h-4" />
-                      <ChevronDown className="w-3 h-3 ml-1" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem>
-                      <FileImage className="w-4 h-4 mr-2" />
-                      Download PNG
+                    <DropdownMenuItem onClick={() => downloadChartPNG('energy')}>
+                      Download as PNG
                     </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Download CSV
+                    <DropdownMenuItem onClick={() => downloadChartCSV('energy')}>
+                      Download as CSV
                     </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Download PDF
+                    <DropdownMenuItem onClick={() => downloadChartPDF('energy')}>
+                      Download as PDF
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -502,12 +730,14 @@ export default function PlantDetails() {
             <CardContent>
               <div className="h-[23rem]">
                 {energyLiveTab === "graph" ? (
-                  <EnergyChart
-                    data={chartData}
-                    type="energy"
-                    height={368}
-                    selectedDate={selectedDate}
-                  />
+                  <div data-chart-type="energy">
+                    <EnergyChart
+                      data={chartData}
+                      type="energy"
+                      height={368}
+                      selectedDate={selectedDate}
+                    />
+                  </div>
                 ) : (
                   <div className="h-full overflow-auto bg-white border rounded-lg">
                     <table className="w-full text-sm">
@@ -566,34 +796,78 @@ export default function PlantDetails() {
 
           {/* Battery Power Chart */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Battery Power</CardTitle>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="p-1 h-8 w-8">
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => downloadChartPNG('battery')}>
+                      Download as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => downloadChartCSV('battery')}>
+                      Download as CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => downloadChartPDF('battery')}>
+                      Download as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="h-[23rem]">
-                <EnergyChart
-                  data={chartData}
-                  type="battery"
-                  height={368}
-                  selectedDate={selectedDate}
-                />
+                <div data-chart-type="battery">
+                  <EnergyChart
+                    data={chartData}
+                    type="battery"
+                    height={368}
+                    selectedDate={selectedDate}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Battery Savings Chart */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Battery Savings</CardTitle>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="p-1 h-8 w-8">
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => downloadChartPNG('savings')}>
+                      Download as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => downloadChartCSV('savings')}>
+                      Download as CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => downloadChartPDF('savings')}>
+                      Download as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="h-[23rem]">
-                <EnergyChart
-                  data={chartData}
-                  type="savings"
-                  height={368}
-                  selectedDate={selectedDate}
-                />
+                <div data-chart-type="savings">
+                  <EnergyChart
+                    data={chartData}
+                    type="savings"
+                    height={368}
+                    selectedDate={selectedDate}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
