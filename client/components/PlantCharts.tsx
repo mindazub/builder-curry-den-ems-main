@@ -30,11 +30,6 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
   const [batteryPowerTab, setBatteryPowerTab] = useState<"graph" | "data">("graph");
   const [batterySavingsTab, setBatterySavingsTab] = useState<"graph" | "data">("graph");
 
-  const dataPointsText = useMemo(() => 
-    `${chartData.length} data points`, 
-    [chartData.length]
-  );
-
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -68,6 +63,10 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
     }));
   }, [chartData]);
 
+  const dailyBatterySavingsTotal = useMemo(() => {
+    return chartData.reduce((total, point) => total + point.battery_savings, 0);
+  }, [chartData]);
+
   return (
     <div className="space-y-6">
       {/* Energy Live Chart */}
@@ -75,9 +74,6 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Energy Live Chart</CardTitle>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">
-              {dataPointsText}
-            </span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="p-1 h-8 w-8">
@@ -124,7 +120,7 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
         </div>
 
         <CardContent>
-          <div className="h-[23rem]">
+          <div className="h-[29.25rem]">
             {energyLiveTab === "graph" ? (
               <div data-chart-type="energy">
                 <EnergyChart
@@ -168,9 +164,6 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Battery Power Chart</CardTitle>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">
-              {dataPointsText}
-            </span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="p-1 h-8 w-8">
@@ -216,7 +209,7 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
         </div>
 
         <CardContent>
-          <div className="h-[23rem]">
+          <div className="h-[29.25rem]">
             {batteryPowerTab === "graph" ? (
               <div data-chart-type="battery">
                 <EnergyChart
@@ -254,11 +247,13 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
       {/* Battery Savings Chart */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Battery Savings Chart</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">
-              {dataPointsText}
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-lg">Battery Savings Chart</CardTitle>
+            <span className="text-sm text-green-600 font-medium">
+              Total savings: {dailyBatterySavingsTotal.toFixed(2)}€
             </span>
+          </div>
+          <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="p-1 h-8 w-8">
@@ -304,7 +299,7 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
         </div>
 
         <CardContent>
-          <div className="h-[23rem]">
+          <div className="h-[29.25rem]">
             {batterySavingsTab === "graph" ? (
               <div data-chart-type="savings">
                 <EnergyChart

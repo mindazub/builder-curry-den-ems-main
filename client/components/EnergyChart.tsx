@@ -5,6 +5,7 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -13,7 +14,7 @@ import {
   TimeScale
 } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
-import { Line } from 'react-chartjs-2';
+import { Line, Chart } from 'react-chartjs-2';
 import { ChartDataPoint } from '../../shared/types';
 import { useSettings } from '../context/SettingsContext';
 import { Button } from './ui/button';
@@ -33,6 +34,7 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -217,18 +219,28 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
           ]
         };
       case 'savings':
+        // Filter out zero savings values
+        const nonZeroSavingsData = offsetData.filter(d => d.battery_savings !== 0);
+        
         return {
           datasets: [
             {
               label: 'Battery Savings (€)',
-              data: offsetData.map(d => ({ x: d.timestamp * 1000, y: d.battery_savings })),
-              borderColor: 'rgb(34, 197, 94)',
-              backgroundColor: 'rgba(34, 197, 94, 0.6)',
-              fill: 'origin',
-              tension: 0.1,
+              type: 'bar' as const,
+              data: nonZeroSavingsData.map(d => ({ x: d.timestamp * 1000, y: d.battery_savings })),
+              borderColor: (context: any) => {
+                const value = context.parsed.y;
+                return value < 0 ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)';
+              },
+              backgroundColor: (context: any) => {
+                const value = context.parsed.y;
+                return value < 0 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(34, 197, 94, 0.6)';
+              },
+              maxBarThickness: 10,
             },
             {
               label: 'Energy Price (€/MWh)',
+              type: 'line' as const,
               data: offsetData.map(d => ({ x: d.timestamp * 1000, y: d.price })),
               borderColor: 'rgb(245, 158, 11)',
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
@@ -269,6 +281,11 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
     plugins: {
       legend: {
         position: 'top' as const,
+        labels: {
+          font: {
+            size: 16
+          }
+        }
       },
       title: {
         display: false,
@@ -276,6 +293,12 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
       tooltip: {
         mode: 'index',
         intersect: false,
+        titleFont: {
+          size: 16
+        },
+        bodyFont: {
+          size: 14
+        },
         callbacks: {
           title: (context) => {
             const timestamp = context[0].parsed.x;
@@ -303,7 +326,7 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
             enabled: true,
           },
           drag: {
-            enabled: true,
+            enabled: false,
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
           },
           mode: 'x',
@@ -343,6 +366,9 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
         title: {
           display: true,
           text: 'Time',
+          font: {
+            size: 16
+          }
         },
         grid: {
           color: 'rgba(0, 0, 0, 0.1)',
@@ -350,6 +376,9 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
         min: timeRange.min,
         max: timeRange.max,
         ticks: {
+          font: {
+            size: 14
+          },
           source: 'auto',
           autoSkip: true,
           maxTicksLimit: 25,
@@ -409,6 +438,14 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
         title: {
           display: true,
           text: type === 'energy' ? 'Power (kW)' : type === 'battery' ? 'Power (kW)' : 'Savings (€)',
+          font: {
+            size: 16
+          }
+        },
+        ticks: {
+          font: {
+            size: 14
+          }
         },
         grid: {
           color: 'rgba(0, 0, 0, 0.1)',
@@ -421,6 +458,14 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
         title: {
           display: true,
           text: type === 'energy' ? 'SOC (%)' : 'Price (€/MWh)',
+          font: {
+            size: 16
+          }
+        },
+        ticks: {
+          font: {
+            size: 14
+          }
         },
         grid: {
           drawOnChartArea: false,
@@ -468,7 +513,7 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
           <RotateCcw className="w-4 h-4" />
         </Button>
       </div>
-      <Line ref={chartRef} data={getChartConfig()} options={options} />
+      <Chart ref={chartRef} type={type === 'savings' ? 'line' : 'line'} data={getChartConfig()} options={options} />
     </div>
   );
 };
