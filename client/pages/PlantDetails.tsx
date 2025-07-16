@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,8 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  Edit,
+  Plus,
 } from "lucide-react";
 
 import { PlantViewResponse, PlantDataSnapshot, ChartDataPoint } from "../../shared/types";
@@ -57,7 +59,6 @@ import PlantMapSimple from "@/components/PlantMapSimple";
 import StaticMap from "@/components/StaticMapEmbed";
 import MapErrorBoundary from "@/components/MapErrorBoundary";
 import jsPDF from 'jspdf';
-import { TimeOffsetDisplay } from "@/components/TimeOffsetDisplay";
 
 export default function PlantDetails() {
   const { id } = useParams<{ id: string }>();
@@ -111,29 +112,6 @@ export default function PlantDetails() {
     const nextDay = new Date(selectedDate);
     nextDay.setDate(nextDay.getDate() + 1);
     setSelectedDate(nextDay);
-  };
-
-  const goToToday = () => {
-    setSelectedDate(new Date());
-  };
-
-  const formatDisplayDate = (date: Date) => {
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === today.toDateString()) {
-      return "Today";
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-    }
   };
 
   const formatTimestamp = (timestamp: number) => {
@@ -472,7 +450,7 @@ export default function PlantDetails() {
         {/* Date Navigation Section */}
         <div className="p-4 mb-6 bg-white rounded-lg border border-gray-200">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center flex-1">
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -490,7 +468,12 @@ export default function PlantDetails() {
                       className="w-64 justify-start text-left font-normal"
                     >
                       <Calendar className="mr-2 h-4 w-4" />
-                      {formatDisplayDate(selectedDate)}
+                      {selectedDate.toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
                       <ChevronDown className="ml-auto h-4 w-4 opacity-50" />
                     </Button>
                   </PopoverTrigger>
@@ -506,15 +489,6 @@ export default function PlantDetails() {
                       disabled={(date) => date > new Date()}
                       initialFocus
                     />
-                    <div className="p-3 border-t">
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={goToToday}
-                      >
-                        Today
-                      </Button>
-                    </div>
                   </PopoverContent>
                 </Popover>
                 
@@ -528,34 +502,24 @@ export default function PlantDetails() {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
-              
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span>•</span>
-                <span>
-                  {selectedDate.toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </span>
-                <span>•</span>
-                <span>Full Day (00:00 - 24:00)</span>
-              </div>
-              
+            </div>
+            
+            <div className="flex gap-2 items-center">
+              <Link to="/plants">
+                <Button variant="outline" size="sm">
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+              </Link>
+              <Link to="/plants">
+                <Button variant="outline" size="sm">
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Plant
+                </Button>
+              </Link>
               <Badge className={getStatusColor(plantData.plant_metadata.status)}>
                 {plantData.plant_metadata.status}
               </Badge>
-            </div>
-            
-            <TimeOffsetDisplay />
-            
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm">
-                Edit
-              </Button>
-              <Button variant="outline" size="sm">
-                Settings
-              </Button>
             </div>
           </div>
         </div>
