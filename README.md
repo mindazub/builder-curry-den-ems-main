@@ -1,1 +1,7 @@
-# builder-curry-den-ems-main
+### builder-curry-den-ems-main
+
+# clone
+
+# npm install
+
+# npm run dev
