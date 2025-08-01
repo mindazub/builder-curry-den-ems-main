@@ -87,3 +87,42 @@ export interface ChartDataPoint {
   price: number;
   battery_savings: number;
 }
+
+// Authentication types
+export interface User {
+  id: number;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  role: 'USER' | 'ADMIN';
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface AuthResponse {
+  message: string;
+  user: User;
+  token: string;
+}
+
+export interface ProfileUpdateRequest {
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}

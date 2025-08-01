@@ -32,6 +32,12 @@ export default defineConfig({
         // External dependencies that should not be bundled
         "express",
         "cors",
+        "bcryptjs",
+        "jsonwebtoken",
+        "cookie-parser",
+        "express-rate-limit",
+        "@prisma/client",
+        "../generated/prisma"
       ],
       output: {
         format: "es",

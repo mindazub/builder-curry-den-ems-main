@@ -1,13 +1,16 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
-import { ChevronDown, Menu, Settings, LogOut } from "lucide-react";
+import { ChevronDown, Menu, Settings, LogOut, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/context/AuthContext";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface HeaderProps {
   variant?: "marketing" | "app";
@@ -15,6 +18,17 @@ interface HeaderProps {
 
 export function Header({ variant = "marketing" }: HeaderProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   if (variant === "marketing") {
     return (
@@ -53,25 +67,64 @@ export function Header({ variant = "marketing" }: HeaderProps) {
               >
                 Pricing
               </Link>
-              <Link
-                to="/plants"
-                className="text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                Plant Monitoring
-              </Link>
+              {isAuthenticated && (
+                <Link
+                  to="/plants"
+                  className="text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  Plant Monitoring
+                </Link>
+              )}
             </nav>
 
             {/* Auth Buttons */}
             <div className="hidden md:flex items-center space-x-4">
-              <Link
-                to="#"
-                className="text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                Sign In
-              </Link>
-              <Button className="bg-brand-teal-500 hover:bg-brand-teal-600 text-white">
-                Get Started
-              </Button>
+              {isAuthenticated ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="flex items-center space-x-2">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>
+                          {user?.firstName?.[0] || user?.email[0].toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm">{user?.firstName || user?.email}</span>
+                      <ChevronDown className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem asChild>
+                      <Link to="/dashboard" className="flex items-center">
+                        <User className="w-4 h-4 mr-2" />
+                        Dashboard
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/profile" className="flex items-center">
+                        <User className="w-4 h-4 mr-2" />
+                        Profile
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout} className="flex items-center">
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    className="text-gray-600 hover:text-gray-900 transition-colors"
+                  >
+                    Sign In
+                  </Link>
+                  <Button asChild className="bg-brand-teal-500 hover:bg-brand-teal-600 text-white">
+                    <Link to="/register">Get Started</Link>
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Mobile menu button */}
@@ -131,26 +184,37 @@ export function Header({ variant = "marketing" }: HeaderProps) {
             ))}
           </nav>
 
-          {/* Admin Dropdown */}
+          {/* User Dropdown */}
           <div className="flex items-center space-x-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="text-gray-600 hover:text-gray-900"
-                >
-                  Admin
-                  <ChevronDown className="w-4 h-4 ml-1" />
+                <Button variant="ghost" className="flex items-center space-x-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback>
+                      {user?.firstName?.[0] || user?.email[0].toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm hidden sm:inline">
+                    {user?.firstName || user?.email}
+                  </span>
+                  <ChevronDown className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link to="/profile" className="flex items-center">
+                    <User className="w-4 h-4 mr-2" />
+                    Profile
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/settings" className="flex items-center">
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="flex items-center">
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="flex items-center">
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign Out
                 </DropdownMenuItem>
