@@ -1,5 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,21 +64,29 @@ import PlantStaticInfo from "@/components/PlantStaticInfo";
 import PlantCharts from "@/components/PlantCharts";
 import DateNavigation from "@/components/DateNavigation";
 import PlantDevices from "@/components/PlantDevices";
+import { ChartSkeleton } from "@/components/ChartSkeleton";
 
 export default function PlantDetails() {
   const { id } = useParams<{ id: string }>();
   const [plantData, setPlantData] = useState<PlantViewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // For initial page load only
+  const [chartLoading, setChartLoading] = useState(false); // For chart data refresh only
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [mapType, setMapType] = useState<'static' | 'simple' | 'leaflet'>('static');
   const [energyLiveTab, setEnergyLiveTab] = useState<'graph' | 'data'>('graph');
 
-  const fetchPlantData = useCallback(async (date: Date = new Date()) => {
+  const fetchPlantData = useCallback(async (date: Date = new Date(), source: 'initial' | 'dateChange' | 'refresh' = 'initial') => {
     if (!id) return;
     
     try {
-      setLoading(true);
+      // Only show chart loading for date changes and manual refresh
+      // Initial load shows full page loading
+      if (source === 'dateChange' || source === 'refresh') {
+        setChartLoading(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       
       // Get full day timestamps (00:00 to 23:59:59)
@@ -96,12 +105,20 @@ export default function PlantDetails() {
       setError(err instanceof Error ? err.message : "Failed to fetch plant data");
     } finally {
       setLoading(false);
+      setChartLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    fetchPlantData(selectedDate);
-  }, [fetchPlantData, selectedDate]);
+    fetchPlantData(selectedDate, 'initial');
+  }, [fetchPlantData]);
+
+  // Separate effect for date changes to trigger chart loading
+  useEffect(() => {
+    if (plantData) { // Only if we already have data (not initial load)
+      fetchPlantData(selectedDate, 'dateChange');
+    }
+  }, [selectedDate]);
 
   const goToPreviousDay = useCallback(() => {
     const previousDay = new Date(selectedDate);
@@ -114,6 +131,10 @@ export default function PlantDetails() {
     nextDay.setDate(nextDay.getDate() + 1);
     setSelectedDate(nextDay);
   }, [selectedDate]);
+
+  const handleRefresh = useCallback(() => {
+    fetchPlantData(selectedDate, 'refresh');
+  }, [fetchPlantData, selectedDate]);
 
   const handleMapTypeChange = useCallback((value: 'static' | 'simple' | 'leaflet') => {
     setMapType(value);
@@ -443,12 +464,12 @@ export default function PlantDetails() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                onClick={() => fetchPlantData(selectedDate)}
-                disabled={loading}
+                onClick={handleRefresh}
+                disabled={loading || chartLoading}
                 variant="outline"
                 size="sm"
               >
-                {loading ? (
+                {(loading || chartLoading) ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <RefreshCw className="w-4 h-4 mr-2" />
@@ -480,14 +501,39 @@ export default function PlantDetails() {
           onMapTypeChange={setMapType}
         />
 
-        {/* Plant Charts Component */}
-        <PlantCharts 
-          chartData={chartData}
-          selectedDate={selectedDate}
-          onDownloadPNG={downloadChartPNG}
-          onDownloadCSV={downloadChartCSV}
-          onDownloadPDF={downloadChartPDF}
-        />
+        {/* Plant Charts Component with Smooth Loading */}
+        <AnimatePresence mode="wait">
+          {chartLoading ? (
+            <motion.div 
+              key="chart-skeleton"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="space-y-6"
+            >
+              <ChartSkeleton title="Energy Live Chart" showTabs={true} showDownload={true} />
+              <ChartSkeleton title="Battery Power & State of Charge" showTabs={true} showDownload={true} />
+              <ChartSkeleton title="Battery Savings & Energy Pricing" showTabs={true} showDownload={true} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="chart-content"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+            >
+              <PlantCharts 
+                chartData={chartData}
+                selectedDate={selectedDate}
+                onDownloadPNG={downloadChartPNG}
+                onDownloadCSV={downloadChartCSV}
+                onDownloadPDF={downloadChartPDF}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Plant Devices Component */}
         <PlantDevices 
