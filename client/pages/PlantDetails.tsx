@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,9 +41,65 @@ export default function PlantDetails() {
   const [mapType, setMapType] = useState<'static' | 'simple' | 'leaflet'>('static');
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  
+  // 🚀 Smart Data Cache - Stores up to 7 days of plant data for instant transitions
+  const [dataCache, setDataCache] = useState<Map<string, {
+    data: PlantViewResponse;
+    timestamp: number;
+    isStale: boolean;
+  }>>(new Map());
+  
+  // 🎯 Prevent duplicate fetches for the same date
+  const fetchingRef = useRef<Set<string>>(new Set());
+  const lastFetchRef = useRef<string | null>(null);
 
+  // 🎯 Helper: Generate cache key for a date
+  const getCacheKey = useCallback((date: Date) => {
+    return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+  }, []);
+
+  // 🎯 Helper: Check if cached data is still fresh (within 5 minutes for today, 1 hour for historical)
+  const isCacheValid = useCallback((cacheEntry: any, date: Date) => {
+    const now = Date.now();
+    const isToday = getCacheKey(date) === getCacheKey(new Date());
+    const maxAge = isToday ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 min for today, 1 hour for historical
+    return (now - cacheEntry.timestamp) < maxAge && !cacheEntry.isStale;
+  }, [getCacheKey]);
+
+  // 🚀 Smart fetch with intelligent caching
   const fetchPlantData = useCallback(async (date: Date = new Date(), source: 'initial' | 'dateChange' | 'refresh' = 'initial') => {
     if (!id) return;
+    
+    const cacheKey = getCacheKey(date);
+    const cachedData = dataCache.get(cacheKey);
+    
+    // 🛡️ Prevent duplicate fetches for the same date
+    if (fetchingRef.current.has(cacheKey) && source !== 'refresh') {
+      console.log(`🛡️ Already fetching ${cacheKey}, skipping duplicate request`);
+      return;
+    }
+    
+    // 🎯 Check cache first - instant load for cached data
+    if (cachedData && isCacheValid(cachedData, date) && source !== 'refresh') {
+      console.log(`🚀 Cache HIT for ${cacheKey} - instant load!`);
+      setPlantData(cachedData.data);
+      setError(null);
+      
+      // Show toast notification for cache hit (in development)
+      if (process.env.NODE_ENV === 'development' && source === 'dateChange') {
+        toast({
+          title: "⚡ Cache Hit!",
+          description: `Data loaded instantly for ${cacheKey}`,
+          duration: 2000,
+        });
+      }
+      
+      // No loading states needed - instant!
+      return;
+    }
+    
+    // 🔒 Mark as fetching to prevent duplicates
+    fetchingRef.current.add(cacheKey);
     
     try {
       // Only show chart loading for date changes and manual refresh
@@ -65,28 +121,235 @@ export default function PlantDetails() {
       const start = Math.floor(startOfDay.getTime() / 1000);
       const end = Math.floor(endOfDay.getTime() / 1000);
       
+      console.log(`📡 Fetching data for ${cacheKey}...`);
       const response = await plantApi.getPlantView(id, start, end);
       console.log('fetchPlantData: API response:', response);
       console.log('fetchPlantData: aggregated_data_snapshots length:', response?.aggregated_data_snapshots?.length);
-      setPlantData(response);
+      
+      // 🎯 Handle empty response gracefully - don't treat it as an error
+      let processedResponse = response;
+      if (!response || !response.aggregated_data_snapshots || response.aggregated_data_snapshots.length === 0) {
+        console.warn(`⚠️ No data for ${cacheKey}, creating empty response structure`);
+        processedResponse = {
+          plant_metadata: response?.plant_metadata || {
+            uid: id,
+            owner: 'Unknown',
+            status: 'Working' as const,
+            capacity: 0,
+            latitude: 0,
+            longitude: 0,
+            updated_at: Date.now() / 1000
+          },
+          aggregated_data_snapshots: [],
+          controllers: response?.controllers || []
+        };
+      }
+      
+      // 🎯 Store in cache
+      const newCache = new Map(dataCache);
+      newCache.set(cacheKey, {
+        data: processedResponse,
+        timestamp: Date.now(),
+        isStale: false
+      });
+      
+      // 🧹 Clean old cache entries (keep only last 7 days)
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 7);
+      for (const [key, value] of newCache.entries()) {
+        const entryDate = new Date(key);
+        if (entryDate < cutoffDate) {
+          newCache.delete(key);
+        }
+      }
+      
+      setDataCache(newCache);
+      setPlantData(processedResponse);
+      
+      console.log(`💾 Cached data for ${cacheKey}. Cache size: ${newCache.size}`);
     } catch (err) {
+      console.error(`❌ Error fetching data for ${cacheKey}:`, err);
       setError(err instanceof Error ? err.message : "Failed to fetch plant data");
     } finally {
+      // 🔓 Remove from fetching set
+      fetchingRef.current.delete(cacheKey);
       setLoading(false);
       setChartLoading(false);
     }
-  }, [id]);
+  }, [id, dataCache, getCacheKey, isCacheValid, toast]); // ✅ FIXED: Stable dependencies
+
+  // 🚀 Background prefetch for adjacent dates (silent loading)
+  const prefetchAdjacentDates = useCallback(async (currentDate: Date) => {
+    if (!id) return;
+    
+    const dates = [];
+    // Prefetch yesterday and tomorrow
+    const yesterday = new Date(currentDate);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date(currentDate);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    dates.push(yesterday, tomorrow);
+    
+    for (const date of dates) {
+      const cacheKey = getCacheKey(date);
+      const cachedData = dataCache.get(cacheKey);
+      
+      // Skip if already cached and valid
+      if (cachedData && isCacheValid(cachedData, date)) {
+        continue;
+      }
+      
+      try {
+        console.log(`🔄 Background prefetch for ${cacheKey}...`);
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+        const start = Math.floor(startOfDay.getTime() / 1000);
+        const end = Math.floor(endOfDay.getTime() / 1000);
+        
+        const response = await plantApi.getPlantView(id, start, end);
+        
+        setDataCache(prev => {
+          const newCache = new Map(prev);
+          newCache.set(cacheKey, {
+            data: response,
+            timestamp: Date.now(),
+            isStale: false
+          });
+          return newCache;
+        });
+        
+        console.log(`💾 Prefetched and cached ${cacheKey}`);
+      } catch (err) {
+        console.log(`⚠️ Prefetch failed for ${cacheKey}:`, err);
+      }
+    }
+  }, [id, dataCache, getCacheKey, isCacheValid]); // ✅ FIXED: Stable dependencies
+
+  // 🎯 Initial cache population - fetch last 3 days + current day
+  const populateInitialCache = useCallback(async () => {
+    if (!id) return;
+    
+    console.log('🚀 Populating initial cache...');
+    const dates = [];
+    const today = new Date();
+    
+    // Add current day and 3 days back
+    for (let i = 0; i <= 3; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      dates.push(date);
+    }
+    
+    // Fetch current day first (priority) - Direct API call to avoid circular dependency
+    try {
+      const todayKey = getCacheKey(today);
+      const startOfDay = new Date(today);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(today);
+      endOfDay.setHours(23, 59, 59, 999);
+      const start = Math.floor(startOfDay.getTime() / 1000);
+      const end = Math.floor(endOfDay.getTime() / 1000);
+      
+      console.log(`📡 Initial fetch for ${todayKey}...`);
+      const response = await plantApi.getPlantView(id, start, end);
+      
+      // 🎯 Handle empty response gracefully
+      if (!response || !response.aggregated_data_snapshots) {
+        console.warn(`⚠️ No data received for ${todayKey}, creating empty response`);
+        const emptyResponse: PlantViewResponse = {
+          plant_metadata: response?.plant_metadata || {
+            uid: id,
+            owner: 'Unknown',
+            status: 'Working' as const,
+            capacity: 0,
+            latitude: 0,
+            longitude: 0,
+            updated_at: Date.now() / 1000
+          },
+          aggregated_data_snapshots: [],
+          controllers: response?.controllers || []
+        };
+        setPlantData(emptyResponse);
+      } else {
+        setPlantData(response);
+      }
+      
+      setLoading(false);
+      
+      // Cache today's data
+      setDataCache(prev => {
+        const newCache = new Map(prev);
+        newCache.set(todayKey, {
+          data: response,
+          timestamp: Date.now(),
+          isStale: false
+        });
+        return newCache;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch plant data");
+      setLoading(false);
+    }
+    
+    // Then fetch historical data in background
+    const historicalDates = dates.slice(1); // Skip today (already fetched)
+    for (const date of historicalDates) {
+      const cacheKey = getCacheKey(date);
+      
+      try {
+        console.log(`📚 Caching historical data for ${cacheKey}...`);
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+        const start = Math.floor(startOfDay.getTime() / 1000);
+        const end = Math.floor(endOfDay.getTime() / 1000);
+        
+        const response = await plantApi.getPlantView(id, start, end);
+        
+        setDataCache(prev => {
+          const newCache = new Map(prev);
+          newCache.set(cacheKey, {
+            data: response,
+            timestamp: Date.now(),
+            isStale: false
+          });
+          return newCache;
+        });
+        
+        console.log(`💾 Historical data cached for ${cacheKey}`);
+      } catch (err) {
+        console.log(`⚠️ Failed to cache historical data for ${cacheKey}:`, err);
+      }
+    }
+    
+    console.log(`✅ Initial cache population complete.`);
+  }, [id, getCacheKey]); // ✅ FIXED: Minimal dependencies
 
   useEffect(() => {
-    fetchPlantData(selectedDate, 'initial');
-  }, [fetchPlantData]);
+    populateInitialCache();
+  }, []); // ✅ FIXED: Empty dependency array for initial cache population only
 
   // Separate effect for date changes to trigger chart loading
   useEffect(() => {
-    if (plantData) { // Only if we already have data (not initial load)
+    if (plantData && selectedDate) { // Only if we already have initial data
+      const cacheKey = getCacheKey(selectedDate);
+      
+      // 🛡️ Debounce rapid date changes
+      if (lastFetchRef.current === cacheKey) {
+        console.log(`🛡️ Skipping duplicate date change for ${cacheKey}`);
+        return;
+      }
+      lastFetchRef.current = cacheKey;
+      
       fetchPlantData(selectedDate, 'dateChange');
+      // 🚀 Prefetch adjacent dates after a short delay
+      setTimeout(() => prefetchAdjacentDates(selectedDate), 100);
     }
-  }, [selectedDate]);
+  }, [selectedDate]); // ✅ FIXED: Only depend on selectedDate to prevent infinite loop
 
   const goToPreviousDay = useCallback(() => {
     const previousDay = new Date(selectedDate);
@@ -101,8 +364,18 @@ export default function PlantDetails() {
   }, [selectedDate]);
 
   const handleRefresh = useCallback(() => {
+    // 🔄 Mark current cache as stale and refetch
+    const cacheKey = getCacheKey(selectedDate);
+    setDataCache(prev => {
+      const newCache = new Map(prev);
+      const existing = newCache.get(cacheKey);
+      if (existing) {
+        newCache.set(cacheKey, { ...existing, isStale: true });
+      }
+      return newCache;
+    });
     fetchPlantData(selectedDate, 'refresh');
-  }, [fetchPlantData, selectedDate]);
+  }, [fetchPlantData, selectedDate, getCacheKey]);
 
   const handleMapTypeChange = useCallback((value: 'static' | 'simple' | 'leaflet') => {
     setMapType(value);
@@ -180,6 +453,18 @@ export default function PlantDetails() {
     if (!plantData) return [];
     return processChartData(plantData.aggregated_data_snapshots);
   }, [plantData, processChartData]);
+
+  // 🚀 Cache info for debugging (memoized to prevent re-renders)
+  const cacheInfo = useMemo(() => ({
+    size: dataCache.size,
+    currentCached: dataCache.has(getCacheKey(selectedDate)),
+    currentDateKey: getCacheKey(selectedDate)
+  }), [dataCache, selectedDate, getCacheKey]);
+
+  // 🎯 Check if current date has data
+  const hasDataForCurrentDate = useMemo(() => {
+    return chartData && chartData.length > 0;
+  }, [chartData]);
 
   const handleExport = useCallback(async (config: any) => {
     if (!chartData || chartData.length === 0 || !id) {
@@ -440,7 +725,15 @@ export default function PlantDetails() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-            <span className="ml-2 text-gray-600">Loading plant data...</span>
+            <div className="ml-2">
+              <span className="text-gray-600">Loading plant data...</span>
+              {/* 💾 Show cache status in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Cache size: {cacheInfo.size} entries
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -543,6 +836,42 @@ export default function PlantDetails() {
           plantStatus={plantData.plant_metadata.status}
           getStatusColor={getStatusColor}
         />
+
+        {/* 🚀 Cache Status (Development only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+            <span className="text-blue-700 font-medium">📊 Cache Status:</span>
+            <span className="ml-2 text-blue-600">
+              {cacheInfo.size} days cached | 
+              Current ({cacheInfo.currentDateKey}): {cacheInfo.currentCached ? '💾 Cached' : '📡 Loading'}
+            </span>
+          </div>
+        )}
+
+        {/* 🎯 No Data Indicator */}
+        {!chartLoading && !hasDataForCurrentDate && (
+          <div className="mb-6 p-6 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-center">
+            <div className="flex flex-col items-center space-y-2">
+              <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-gray-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-gray-500 mb-1">NO DATA</h3>
+                <p className="text-sm text-gray-400">
+                  No plant data available for {selectedDate.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Use the navigation buttons to explore other dates
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Plant Static Information Component */}
         <PlantStaticInfo 
