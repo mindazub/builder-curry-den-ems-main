@@ -52,6 +52,16 @@ export const plantApi = {
       throw new Error(`Failed to fetch plants: ${response.statusText}`);
     }
     
+    // Check if response is actually JSON and not HTML
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await response.text();
+      if (text.includes("<!DOCTYPE html>") || text.includes("<html")) {
+        throw new Error("API returned HTML instead of JSON data. This usually indicates an authentication issue or server error.");
+      }
+      throw new Error("API returned non-JSON response");
+    }
+    
     return response.json();
   },
 
@@ -70,7 +80,24 @@ export const plantApi = {
       throw new Error(`Failed to fetch plant view: ${response.statusText}`);
     }
     
-    return response.json();
+    // Check if response is actually JSON and not HTML
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await response.text();
+      if (text.includes("<!DOCTYPE html>") || text.includes("<html")) {
+        throw new Error("API returned HTML instead of JSON data. This usually indicates an authentication issue or server error.");
+      }
+      throw new Error("API returned non-JSON response");
+    }
+    
+    const data = await response.json();
+    
+    // Validate that we have the expected data structure
+    if (!data || typeof data !== 'object') {
+      throw new Error("Invalid data format received from API");
+    }
+    
+    return data;
   },
 
   // Get today's timestamps (start of day at 00:00 and end at 23:59)

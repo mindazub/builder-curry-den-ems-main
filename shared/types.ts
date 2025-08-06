@@ -86,6 +86,12 @@ export interface ChartDataPoint {
   battery_soc: number;
   price: number;
   battery_savings: number;
+  // Additional properties for export
+  pv_power?: number;
+  battery_power?: number;
+  grid_power?: number;
+  load_power?: number;
+  energy_price?: number;
 }
 
 // Authentication types

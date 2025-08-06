@@ -278,6 +278,20 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
   const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
+    
+    // 🎯 SMOOTH CHART TRANSITIONS - This is what you want!
+    animation: {
+      duration: 750,                    // Animation duration in ms
+      easing: 'easeInOutQuart',        // Smooth easing function
+    },
+    transitions: {
+      active: {
+        animation: {
+          duration: 400,                // Hover animations
+        }
+      }
+    },
+    
     plugins: {
       legend: {
         position: 'top' as const,

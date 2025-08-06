@@ -71,7 +71,7 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
   }, [chartData]);
 
   return (
-    <div className={`space-y-6 transition-all duration-500 ease-in-out ${isLoading ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+    <div className="space-y-6">
       {/* Energy Live Chart */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
