@@ -13,13 +13,11 @@ import {
   Filler,
   TimeScale
 } from 'chart.js';
-import zoomPlugin from 'chartjs-plugin-zoom';
 import { Line, Chart } from 'react-chartjs-2';
 import { ChartDataPoint } from '../../shared/types';
 import { useSettings } from '../context/SettingsContext';
 import { Button } from './ui/button';
-import { RotateCcw, ZoomIn, ZoomOut, Download } from 'lucide-react';
-import { ChartZoomHelp } from './ChartZoomHelp';
+import { Download } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +27,7 @@ import {
 import jsPDF from 'jspdf';
 import 'chartjs-adapter-date-fns';
 
+// 🚫 ZOOM PLUGIN COMPLETELY DISABLED - No import, no registration
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -39,8 +38,7 @@ ChartJS.register(
   Tooltip,
   Legend,
   Filler,
-  TimeScale,
-  zoomPlugin
+  TimeScale
 );
 
 interface EnergyChartProps {
@@ -78,6 +76,25 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
     ...d,
     timestamp: d.timestamp + (timeOffset * 3600) // Convert hours to seconds
   }));
+
+  // Console log debug information
+  React.useEffect(() => {
+    console.log('📊 EnergyChart Debug - Chart Type:', type);
+    console.log('📊 EnergyChart Debug - Time Offset (hours):', timeOffset);
+    console.log('📊 EnergyChart Debug - Raw data length:', data.length);
+    console.log('📊 EnergyChart Debug - Offset data length:', offsetData.length);
+    console.log('📊 EnergyChart Debug - First raw data point:', data[0]);
+    console.log('📊 EnergyChart Debug - First offset data point:', offsetData[0]);
+    if (data.length > 0 && offsetData.length > 0) {
+      console.log('📊 EnergyChart Debug - Time comparison:', {
+        raw_timestamp: data[0].timestamp,
+        raw_time: new Date(data[0].timestamp * 1000).toISOString(),
+        offset_timestamp: offsetData[0].timestamp,
+        offset_time: new Date(offsetData[0].timestamp * 1000).toISOString()
+      });
+    }
+    console.log('📊 EnergyChart Debug - All offset data for chart:', offsetData);
+  }, [data, offsetData, type, timeOffset]);
 
   // Download functions
   const downloadPNG = () => {
@@ -149,24 +166,6 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
     URL.revokeObjectURL(url);
   };
 
-  const handleResetZoom = () => {
-    if (chartRef.current) {
-      chartRef.current.resetZoom();
-    }
-  };
-
-  const handleZoomIn = () => {
-    if (chartRef.current) {
-      chartRef.current.zoom(1.2);
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (chartRef.current) {
-      chartRef.current.zoom(0.8);
-    }
-  };
-
   const getChartConfig = () => {
     switch (type) {
       case 'energy':
@@ -179,6 +178,8 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               backgroundColor: 'rgba(59, 130, 246, 0.1)',
               fill: false,
               tension: 0.1,
+              pointRadius: 4,
+              pointHoverRadius: 6,
             },
             {
               label: 'Battery Power (kW)',
@@ -187,6 +188,8 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               backgroundColor: 'rgba(239, 68, 68, 0.1)',
               fill: false,
               tension: 0.1,
+              pointRadius: 4,
+              pointHoverRadius: 6,
             },
             {
               label: 'Grid Power (kW)',
@@ -195,6 +198,8 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               backgroundColor: 'rgba(34, 197, 94, 0.1)',
               fill: false,
               tension: 0.1,
+              pointRadius: 4,
+              pointHoverRadius: 6,
             },
             {
               label: 'Load Power (kW)',
@@ -203,6 +208,8 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               backgroundColor: 'rgba(234, 179, 8, 0.1)',
               fill: false,
               tension: 0.1,
+              pointRadius: 4,
+              pointHoverRadius: 6,
             },
             {
               label: 'Battery SOC (%)',
@@ -212,6 +219,8 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               fill: false,
               tension: 0.1,
               yAxisID: 'y1',
+              pointRadius: 4,
+              pointHoverRadius: 6,
             }
           ]
         };
@@ -225,6 +234,8 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               backgroundColor: 'rgba(239, 68, 68, 0.1)',
               fill: false,
               tension: 0.1,
+              pointRadius: 4,
+              pointHoverRadius: 6,
             },
             {
               label: 'Energy Price (€/MWh)',
@@ -234,11 +245,13 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               fill: false,
               tension: 0.1,
               yAxisID: 'y1',
+              pointRadius: 4,
+              pointHoverRadius: 6,
             }
           ]
         };
       case 'savings':
-        // Filter out zero savings values
+        // Filter out zero savings values for bars only - keep all data for energy price line
         const nonZeroSavingsData = offsetData.filter(d => d.battery_savings !== 0);
         
         return {
@@ -260,12 +273,14 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
             {
               label: 'Energy Price (€/MWh)',
               type: 'line' as const,
-              data: offsetData.map(d => ({ x: d.timestamp * 1000, y: d.price })),
-              borderColor: 'rgb(245, 158, 11)',
-              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              data: offsetData.map(d => ({ x: d.timestamp * 1000, y: d.price })), // Use ALL data points for price line
+              borderColor: 'rgb(249, 115, 22)',
+              backgroundColor: 'rgba(249, 115, 22, 0.1)',
               fill: false,
               tension: 0.1,
               yAxisID: 'y1',
+              pointRadius: 4,
+              pointHoverRadius: 6,
             }
           ]
         };
@@ -294,7 +309,7 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
 
   const timeRange = getFullDayTimeRange();
 
-  const options: ChartOptions<'line'> = {
+  const options: ChartOptions<'line' | 'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
     
@@ -340,37 +355,6 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
               minute: '2-digit',
             });
           },
-        },
-      },
-      zoom: {
-        limits: {
-          x: {
-            min: timeRange.min,
-            max: timeRange.max,
-            minRange: 15 * 60 * 1000, // Minimum 15 minutes
-          },
-        },
-        zoom: {
-          wheel: {
-            enabled: true,
-            speed: 0.1,
-          },
-          pinch: {
-            enabled: true,
-          },
-          drag: {
-            enabled: false,
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          },
-          mode: 'x',
-          onZoomComplete: function(context) {
-            // Trigger a redraw to update dynamic ticks
-            context.chart.update('none');
-          },
-        },
-        pan: {
-          enabled: true,
-          mode: 'x',
         },
       },
     },
@@ -514,39 +498,7 @@ export const EnergyChart: React.FC<EnergyChartProps> = ({ data, type, height = 4
 
   return (
     <div style={{ height }} className="relative">
-      {/* Top-right controls - Zoom only */}
-      <div className="absolute top-2 right-2 z-20 flex gap-1">
-        {/* Zoom controls */}
-        <ChartZoomHelp />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleZoomIn}
-          className="p-1 h-8 w-8"
-          title="Zoom In"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleZoomOut}
-          className="p-1 h-8 w-8"
-          title="Zoom Out"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleResetZoom}
-          className="p-1 h-8 w-8"
-          title="Reset Zoom"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </Button>
-      </div>
-      <Chart ref={chartRef} type={type === 'savings' ? 'line' : 'line'} data={getChartConfig()} options={options} />
+      <Chart ref={chartRef} type={type === 'savings' ? 'bar' : 'line'} data={getChartConfig()} options={options as any} />
     </div>
   );
 };

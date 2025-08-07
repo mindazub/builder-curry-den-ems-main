@@ -792,9 +792,14 @@ export default function PlantDetails() {
                 </a>
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Plant Details - #{id?.substring(0, 8)}
-                </h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Plant Details - #{id?.substring(0, 8)}
+                  </h1>
+                  <Badge className={getStatusColor(plantData.plant_metadata.status)}>
+                    {plantData.plant_metadata.status}
+                  </Badge>
+                </div>
                 <p className="text-gray-600">
                   Real-time monitoring and analytics
                 </p>
@@ -835,6 +840,10 @@ export default function PlantDetails() {
           onNextDay={goToNextDay}
           plantStatus={plantData.plant_metadata.status}
           getStatusColor={getStatusColor}
+          chartData={chartData}
+          onExport={() => setShowExportDialog(true)}
+          onRefresh={handleRefresh}
+          isRefreshing={chartLoading}
         />
 
         {/* 🚀 Cache Status (Development only) */}

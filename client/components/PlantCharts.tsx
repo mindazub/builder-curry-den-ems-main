@@ -11,6 +11,8 @@ import {
 import { Download, FileImage, FileText } from "lucide-react";
 import { EnergyChart } from "@/components/EnergyChart";
 import { ChartDataPoint } from "../../shared/types";
+import { useSettings } from "@/context/SettingsContext";
+import { formatTime } from "@/lib/utils";
 
 interface PlantChartsProps {
   chartData: ChartDataPoint[];
@@ -29,16 +31,30 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
   onDownloadPDF,
   isLoading = false
 }) => {
+  const { timeFormat } = useSettings();
   const [energyLiveTab, setEnergyLiveTab] = useState<"graph" | "data">("graph");
   const [batteryPowerTab, setBatteryPowerTab] = useState<"graph" | "data">("graph");
   const [batterySavingsTab, setBatterySavingsTab] = useState<"graph" | "data">("graph");
 
+  // Apply 6-hour offset to match chart data (offset is 6 hours = 21600 seconds)
+  const TIME_OFFSET_HOURS = 6;
+  const TIME_OFFSET_SECONDS = TIME_OFFSET_HOURS * 3600;
+
   const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatTime(timestamp, timeFormat, TIME_OFFSET_SECONDS);
   };
+
+  // Console log all chart data for debugging
+  React.useEffect(() => {
+    console.log('🔍 PlantCharts Debug - Raw chartData:', chartData);
+    console.log('🔍 PlantCharts Debug - Applied offset (hours):', TIME_OFFSET_HOURS);
+    console.log('🔍 PlantCharts Debug - Time format:', timeFormat);
+    console.log('🔍 PlantCharts Debug - Sample original timestamp:', chartData[0]?.timestamp);
+    console.log('🔍 PlantCharts Debug - Sample offset timestamp:', chartData[0]?.timestamp + TIME_OFFSET_SECONDS);
+    console.log('🔍 PlantCharts Debug - Sample original time:', chartData[0] ? new Date(chartData[0].timestamp * 1000).toISOString() : 'No data');
+    console.log('🔍 PlantCharts Debug - Sample offset time:', chartData[0] ? new Date((chartData[0].timestamp + TIME_OFFSET_SECONDS) * 1000).toISOString() : 'No data');
+    console.log('🔍 PlantCharts Debug - Sample formatted time:', chartData[0] ? formatTime(chartData[0].timestamp, timeFormat, TIME_OFFSET_SECONDS) : 'No data');
+  }, [chartData, timeFormat]);
 
   const energyTableData = useMemo(() => {
     return chartData.map((point) => ({
@@ -126,6 +142,23 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
           <div className="h-[29.25rem]">
             {energyLiveTab === "graph" ? (
               <div data-chart-type="energy">
+                {(() => {
+                  console.log('🔍 Energy Chart Data:', chartData);
+                  console.log('🔍 Energy Chart - First 3 data points with offset applied:');
+                  chartData.slice(0, 3).forEach((point, index) => {
+                    console.log(`  Point ${index}:`, {
+                      original_timestamp: point.timestamp,
+                      original_time: new Date(point.timestamp * 1000).toISOString(),
+                      offset_timestamp: point.timestamp + TIME_OFFSET_SECONDS,
+                      offset_time: new Date((point.timestamp + TIME_OFFSET_SECONDS) * 1000).toISOString(),
+                      pv: point.pv,
+                      battery: point.battery,
+                      grid: point.grid,
+                      load: point.load
+                    });
+                  });
+                  return null;
+                })()}
                 <EnergyChart
                   data={chartData}
                   type="energy"
@@ -231,6 +264,21 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
           <div className="h-[29.25rem]">
             {batteryPowerTab === "graph" ? (
               <div data-chart-type="battery">
+                {(() => {
+                  console.log('🔍 Battery Chart Data:', chartData);
+                  console.log('🔍 Battery Chart - First 3 data points with offset applied:');
+                  chartData.slice(0, 3).forEach((point, index) => {
+                    console.log(`  Point ${index}:`, {
+                      original_timestamp: point.timestamp,
+                      original_time: new Date(point.timestamp * 1000).toISOString(),
+                      offset_timestamp: point.timestamp + TIME_OFFSET_SECONDS,
+                      offset_time: new Date((point.timestamp + TIME_OFFSET_SECONDS) * 1000).toISOString(),
+                      battery: point.battery,
+                      battery_soc: point.battery_soc
+                    });
+                  });
+                  return null;
+                })()}
                 <EnergyChart
                   data={chartData}
                   type="battery"
@@ -338,6 +386,21 @@ const PlantCharts: React.FC<PlantChartsProps> = React.memo(({
           <div className="h-[29.25rem]">
             {batterySavingsTab === "graph" ? (
               <div data-chart-type="savings">
+                {(() => {
+                  console.log('🔍 Savings Chart Data:', chartData);
+                  console.log('🔍 Savings Chart - First 3 data points with offset applied:');
+                  chartData.slice(0, 3).forEach((point, index) => {
+                    console.log(`  Point ${index}:`, {
+                      original_timestamp: point.timestamp,
+                      original_time: new Date(point.timestamp * 1000).toISOString(),
+                      offset_timestamp: point.timestamp + TIME_OFFSET_SECONDS,
+                      offset_time: new Date((point.timestamp + TIME_OFFSET_SECONDS) * 1000).toISOString(),
+                      battery_savings: point.battery_savings,
+                      price: point.price
+                    });
+                  });
+                  return null;
+                })()}
                 <EnergyChart
                   data={chartData}
                   type="savings"

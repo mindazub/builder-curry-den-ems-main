@@ -56,8 +56,13 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setOpen = onOpenChange || setInternalOpen;
-  const [fromDate, setFromDate] = useState<Date>(new Date());
-  const [toDate, setToDate] = useState<Date>(new Date());
+  
+  // Initialize with yesterday's date for both from and to
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const [fromDate, setFromDate] = useState<Date>(yesterday);
+  const [toDate, setToDate] = useState<Date>(yesterday);
   const [fromCalendarOpen, setFromCalendarOpen] = useState(false);
   const [toCalendarOpen, setToCalendarOpen] = useState(false);
   
@@ -65,9 +70,43 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
   const [csvEnabled, setCsvEnabled] = useState(true);
   const [xlsxEnabled, setXlsxEnabled] = useState(true);
 
+  // Helper function to get today's date at midnight
+  const getToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  };
+
+  // Helper function to check if a date is in the past
+  const isPastDate = (date: Date) => {
+    const today = getToday();
+    return date < today;
+  };
+
+  // Handle from date change with validation
+  const handleFromDateChange = (date: Date | undefined) => {
+    if (!date) return;
+    
+    setFromDate(date);
+    // If toDate is before the new fromDate, update toDate to match fromDate
+    if (toDate < date) {
+      setToDate(date);
+    }
+  };
+
+  // Handle to date change with validation
+  const handleToDateChange = (date: Date | undefined) => {
+    if (!date) return;
+    
+    // Ensure toDate is not before fromDate
+    if (date >= fromDate) {
+      setToDate(date);
+    }
+  };
+
   // Quick date preset handlers
   const setToday = useCallback(() => {
-    const today = new Date();
+    const today = getToday();
     setFromDate(today);
     setToDate(today);
   }, []);
@@ -75,27 +114,31 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
   const setYesterday = useCallback(() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
     setFromDate(yesterday);
     setToDate(yesterday);
   }, []);
 
   const setThisMonth = useCallback(() => {
-    const today = new Date();
+    const today = getToday();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    lastDay.setHours(0, 0, 0, 0);
     setFromDate(firstDay);
     setToDate(lastDay);
   }, []);
 
   const setLast30Days = useCallback(() => {
-    const today = new Date();
+    const today = getToday();
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
     setFromDate(thirtyDaysAgo);
     setToDate(today);
   }, []);
 
   const handleExport = useCallback(async () => {
+    // Validation checks
     if (!csvEnabled && !xlsxEnabled) {
       alert('Please select at least one export format (CSV or XLSX)');
       return;
@@ -104,6 +147,25 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
     if (fromDate > toDate) {
       alert('From date cannot be after To date');
       return;
+    }
+
+    // Check if dates are in the future
+    const today = getToday();
+    if (fromDate > today) {
+      alert('From date cannot be in the future');
+      return;
+    }
+
+    if (toDate > today) {
+      alert('To date cannot be in the future');
+      return;
+    }
+
+    // Check for reasonable date range (optional warning)
+    const daysDifference = Math.abs((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDifference > 365) {
+      const confirmed = confirm(`You're exporting data for ${Math.ceil(daysDifference)} days. This might result in a large file. Continue?`);
+      if (!confirmed) return;
     }
 
     const config: ExportConfig = {
@@ -131,7 +193,7 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
       console.error('Export failed:', error);
       alert('Export failed. Please try again.');
     }
-  }, [fromDate, toDate, csvEnabled, xlsxEnabled, onExport]);
+  }, [fromDate, toDate, csvEnabled, xlsxEnabled, onExport, setOpen]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -156,7 +218,17 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
         >
           {/* Date Range Selection */}
           <div className="space-y-4">
-            <h3 className="font-medium text-sm text-gray-700">Select Date Range</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-sm text-gray-700">Select Date Range</h3>
+              <span className="text-xs text-gray-500">
+                {fromDate && toDate && fromDate.getTime() === toDate.getTime() 
+                  ? "Single day" 
+                  : fromDate && toDate 
+                    ? `${Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)) + 1} days`
+                    : ""
+                }
+              </span>
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
               {/* From Date */}
@@ -180,14 +252,17 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
                       mode="single"
                       selected={fromDate}
                       onSelect={(date) => {
-                        if (date) setFromDate(date);
-                        setFromCalendarOpen(false);
+                        if (date) {
+                          handleFromDateChange(date);
+                          setFromCalendarOpen(false);
+                        }
                       }}
                       showOutsideDays={true}
                       fixedWeeks={true}
                       captionLayout="dropdown-buttons"
-                      fromMonth={new Date(2020, 0)}
-                      toMonth={new Date(2030, 11)}
+                      fromYear={2020}
+                      toYear={2030}
+                      toDate={getToday()} // Can't select future dates
                       initialFocus
                     />
                   </PopoverContent>
@@ -215,19 +290,30 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
                       mode="single"
                       selected={toDate}
                       onSelect={(date) => {
-                        if (date) setToDate(date);
-                        setToCalendarOpen(false);
+                        if (date) {
+                          handleToDateChange(date);
+                          setToCalendarOpen(false);
+                        }
                       }}
                       showOutsideDays={true}
                       fixedWeeks={true}
                       captionLayout="dropdown-buttons"
-                      fromMonth={new Date(2020, 0)}
-                      toMonth={new Date(2030, 11)}
+                      fromYear={2020}
+                      toYear={2030}
+                      fromDate={fromDate} // Can't select dates before fromDate
+                      toDate={getToday()} // Can't select future dates
+                      disabled={(date) => date < fromDate || date > getToday()}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
               </div>
+            </div>
+
+            {/* Date selection help text */}
+            <div className="text-xs text-gray-500 bg-blue-50 p-2 rounded">
+              <strong>Note:</strong> You can only select dates from the past. 
+              The "To" date must be the same as or after the "From" date.
             </div>
           </div>
 
@@ -254,18 +340,18 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={setThisMonth}
-                className="h-9"
-              >
-                This Month
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
                 onClick={setLast30Days}
                 className="h-9"
               >
                 Last 30 Days
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={setThisMonth}
+                className="h-9"
+              >
+                This Month
               </Button>
             </div>
           </div>
@@ -323,23 +409,41 @@ const DataExportDialog: React.FC<DataExportDialogProps> = ({
           </div>
 
           {/* Export Button */}
-          <Button 
-            onClick={handleExport}
-            disabled={(isLoading || loading) || (!csvEnabled && !xlsxEnabled)}
-            className="w-full h-10"
-          >
-            {(isLoading || loading) ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Generating Export...
-              </>
-            ) : (
-              <>
-                <Download className="w-4 h-4 mr-2" />
-                Download Data
-              </>
+          <div className="space-y-2">
+            {fromDate > toDate && (
+              <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
+                ⚠️ From date cannot be after To date
+              </div>
             )}
-          </Button>
+            {(fromDate > getToday() || toDate > getToday()) && (
+              <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
+                ⚠️ Cannot select future dates
+              </div>
+            )}
+            <Button 
+              onClick={handleExport}
+              disabled={
+                (isLoading || loading) || 
+                (!csvEnabled && !xlsxEnabled) ||
+                fromDate > toDate ||
+                fromDate > getToday() ||
+                toDate > getToday()
+              }
+              className="w-full h-10"
+            >
+              {(isLoading || loading) ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating Export...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Data
+                </>
+              )}
+            </Button>
+          </div>
         </motion.div>
       </DialogContent>
     </Dialog>

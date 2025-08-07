@@ -2,11 +2,11 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { useSettings } from "@/context/SettingsContext";
+import { useSettings, type TimeFormat } from "@/context/SettingsContext";
 import { Header } from "@/components/Header";
 
 export default function Settings() {
-  const { timeOffset, setTimeOffset } = useSettings();
+  const { timeOffset, timeFormat, setTimeOffset, setTimeFormat } = useSettings();
 
   const offsetOptions = [
     { value: -6, label: "-6 hours" },
@@ -84,10 +84,47 @@ export default function Settings() {
             </CardContent>
           </Card>
 
+          {/* Display Settings Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Time Format (Timeline/Charts)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="timeFormat">Time Format</Label>
+                <Select 
+                  value={timeFormat} 
+                  onValueChange={(value: TimeFormat) => setTimeFormat(value)}
+                >
+                  <SelectTrigger id="timeFormat">
+                    <SelectValue placeholder="Select time format" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="24">24-hour (e.g., 14:30)</SelectItem>
+                    <SelectItem value="12">12-hour (e.g., 2:30 PM)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500">
+                  Choose how time is displayed in data tables and charts.
+                  Default is 24-hour format.
+                </p>
+              </div>
+              
+              <div className="pt-4 border-t">
+                <div className="text-sm text-gray-600">
+                  <p className="font-medium">Preview:</p>
+                  <p className="font-mono">
+                    {timeFormat === '24' ? '00:00, 06:30, 12:00, 18:45' : '12:00 AM, 6:30 AM, 12:00 PM, 6:45 PM'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Additional Settings Card - Placeholder */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Display Settings</CardTitle>
+              <CardTitle className="text-lg">Additional Settings</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-gray-500">
